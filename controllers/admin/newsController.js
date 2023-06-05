@@ -3,7 +3,7 @@ const fs = require('fs');
 const AppError = require('../../utils/appError');
 const catchAsync = require('../../utils/catchAsync');
 const {v4}=require("uuid")
-const { News,Images  } = require('../../models');
+const { News,Images,Video } = require('../../models');
 
 exports.getAllNews=catchAsync(async(req,res,next)=>{
     const limit=req.query.limit || 20
@@ -12,7 +12,15 @@ exports.getAllNews=catchAsync(async(req,res,next)=>{
         order:[["updatedAt","DESC"]],
         limit,
         offset,
-        
+        include:[{
+            model:Images,
+            as:"images"
+        },
+        {
+            model:Video,
+            as:"video"
+        }
+    ]
     })
     return res.send(news)
 })
@@ -55,10 +63,28 @@ exports.uploadImages=catchAsync(async(req,res,next)=>{
         let buffer = await sharp(photo).webp().toBuffer()
         await sharp(buffer).toFile(`static/${image}`);
         await Images.destroy({where:{newsId:news.id}})
-        let newImage = await Images.create({ image, image_id, newsId: news.id })
+        await Video.destroy({where:{newsId:news.id}})
+        let newImage = await Images.create({ image, image_id, newsId: news.id,type:"image" })
         imagesArray.push(newImage)
     }
     return res.status(201).send(imagesArray);
+})
+exports.uploadVideo=catchAsync(async(req,res,next)=>{
+    const news_id = req.params.id;
+    const news = await News.findOne({ where: { news_id } });
+    req.files = Object.values(req.files)
+    req.files = intoArray(req.files)
+    if (!news)
+        return next(new AppError('News did not found with that ID', 404));
+    for (const images of req.files) {
+        const video_id = v4()
+        const video = `${video_id}_news.webp`;
+        images.mv(`static/${video}`);
+        await Video.destroy({where:{newsId:news.id}})
+        await Images.destroy({where:{newsId:news.id}}) 
+        var newVideo = await Video.create({ video, video_id, newsId: news.id,type:"video" })
+    }
+    return res.status(201).send(newVideo);
 })
 exports.deleteNewsImage = catchAsync(async(req, res, next) => {
     const image = await Images.findOne({ where: { image_id: req.params.id } })
